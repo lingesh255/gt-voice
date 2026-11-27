@@ -63,6 +63,7 @@ class CallSession:
         self.transcript: list[dict] = []
         self.events: list[dict] = []
         self.recorded = False
+        self.basket: dict | None = None
 
     @property
     def dist(self) -> str:
@@ -332,6 +333,63 @@ class CallSession:
         self.log("order", action="remove", sku=product.sku)
         return {"ok": True, "removed": line.as_dict(), "order_total_inr": self.order.total}
 
+    def tool_propose_basket(self) -> dict:
+        blocked = self._need_identity()
+        if blocked:
+            return blocked
+        if not self.brief_shared:
+            return {"ok": False, "error": "Call get_call_brief first."}
+        if self.basket:
+            return {"ok": False, "error": "The usual basket was already offered on this call."}
+        skipped = []
+        for item in self.brief.lead:
+            if item.sku in self.order.lines:
+                continue
+            product = self.ctx.dataset.product(item.sku)
+            quantity = min(item.suggested_qty, self.ctx.ledger.available(self.dist, item.sku, self.id))
+            if quantity < product.moq:
+                skipped.append(product.label)
+                continue
+            ok, _ = self.ctx.ledger.hold(self.dist, item.sku, self.id, quantity)
+            if not ok:
+                skipped.append(product.label)
+                continue
+            self.order.add(product, quantity, "suggested")
+        if not self.order.lines:
+            return {"ok": False, "error": "Nothing in their usual basket is in stock today. Ask what they need instead."}
+        self.ctx.ledger.refresh(self.id)
+        self.order.read_back()
+        self.basket = {
+            "lines": {sku: line.quantity for sku, line in self.order.lines.items()},
+            "value": self.order.total,
+            "revision": self.order.revision,
+        }
+        self.log("order", action="basket", value=self.order.total, lines=len(self.order.lines))
+        reply = {
+            "ok": True,
+            "basket": [{"product": l.product.label, "quantity": l.quantity, "unit": l.product.selling_unit}
+                       for l in self.order.lines.values()],
+            "total_inr": self.order.total,
+            "next": "Offer this as their usual order in one turn: each line with its quantity, then the total, then ask "
+                    "whether to send it as it is or change anything. This counts as the read-back, so a clear yes can "
+                    "go straight to confirm_order.",
+        }
+        if skipped:
+            reply["left_out"] = f"Not in stock today, so left out: {', '.join(skipped)}."
+        return reply
+
+    def basket_outcome(self) -> str:
+        if not self.basket:
+            return "not_offered"
+        if self.order.state != CONFIRMED:
+            return "declined"
+        final = {sku: line.quantity for sku, line in self.order.lines.items()}
+        if final == self.basket["lines"]:
+            return "accepted"
+        if all(final.get(sku) == qty for sku, qty in self.basket["lines"].items()):
+            return "accepted_plus"
+        return "edited"
+
     def tool_read_back_order(self) -> dict:
         blocked = self._need_identity()
         if blocked:
@@ -526,6 +584,7 @@ class CallSession:
             "turns": len(self.transcript),
             "tool_calls": len(tools),
             "guard_rejections": sum(1 for e in tools if not e["ok"]),
+            "basket": {"outcome": self.basket_outcome(), "offered_value_inr": self.basket["value"] if self.basket else 0},
             "tasks": list(self.tasks),
             "transcript": self.transcript,
         }
@@ -546,6 +605,7 @@ class CallSession:
             "ended": self.ended,
             "outcome": self.outcome,
             "tasks": list(self.tasks),
+            "basket": {"outcome": self.basket_outcome(), "offered_value_inr": self.basket["value"]} if self.basket else None,
             "brief": self.brief.as_dict(),
             "events": self.events[-60:],
             "transcript": self.transcript,

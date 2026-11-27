@@ -253,6 +253,12 @@ function render(state) {
   renderBrief(state.brief);
 }
 
+const SOURCES = { suggested: ["usual", "src-usual"], retailer_request: ["asked", "src-asked"],
+  cross_sell: ["add-on", "src-addon"], alternative: ["swap", "src-swap"] };
+
+const BASKET = { accepted: "usual basket accepted", accepted_plus: "usual basket + add-on",
+  edited: "usual basket edited", declined: "usual basket declined", not_offered: "no basket offered" };
+
 const ORDER_STATES = {
   draft: ["building", "warn"],
   read_back: ["read back, waiting for yes", "warn"],
@@ -264,7 +270,8 @@ function renderOrder(state) {
   const order = state.order;
   const body = $("order-table").querySelector("tbody");
   body.replaceChildren(...order.lines.map((line) => el("tr", {},
-    el("td", { text: line.product }),
+    el("td", {}, line.product, " ", el("span", { class: `tag ${(SOURCES[line.source] || ["", ""])[1]}`,
+      text: (SOURCES[line.source] || [line.source])[0] })),
     el("td", { class: "num", text: line.quantity }),
     el("td", { class: "num", text: rupees(line.unit_price_inr) }),
     el("td", { class: "num", text: rupees(line.line_value_inr) }),
@@ -276,6 +283,9 @@ function renderOrder(state) {
   $("order-state").className = `pill ${tone}`;
   const outcome = $("outcome");
   outcome.replaceChildren();
+  if (state.basket) outcome.append(el("span", { class: "pill live",
+    text: state.ended || state.order.state === "confirmed" ? BASKET[state.basket.outcome]
+      : `usual basket offered ${rupees(state.basket.offered_value_inr)}` }));
   if (state.order_id) outcome.append(el("span", { class: "pill good", text: `order ${state.order_id}` }));
   if (state.outcome) outcome.append(el("span", { class: "pill", text: state.outcome.replaceAll("_", " ") }));
   for (const task of state.tasks) outcome.append(el("span", { class: "pill warn", text: task }));
@@ -330,7 +340,7 @@ function renderBrief(brief) {
   if (brief.skip_reason) parts.push(el("p", { class: "muted", text: brief.skip_reason }));
 
   if (brief.lead.length) {
-    parts.push(el("div", { class: "section-title", text: `Lead with (about ${rupees(brief.expected_value)})` }));
+    parts.push(el("div", { class: "section-title", text: `Usual basket, offered in one question (${rupees(brief.expected_value)})` }));
     parts.push(el("table", { class: "table" },
       el("thead", {}, el("tr", {}, ["Product", "Last / prev", "Days", "Suggest", "Stock"].map((h, i) =>
         el("th", { class: i ? "num" : "", text: h })))),
@@ -436,11 +446,21 @@ async function loadOutcomes() {
   fill("dnc-table", data.opt_outs.map((d) => el("tr", {},
     el("td", { text: `${d.retailer_id} ${d.retailer_name}` }), el("td", { class: "small", text: d.reason }),
     el("td", { class: "small", text: d.created_at.replace("T", " ").slice(0, 16) }))), 3);
+  const offered = data.calls.filter((c) => c.basket && c.basket.outcome !== "not_offered");
+  const taken = offered.filter((c) => ["accepted", "accepted_plus", "edited"].includes(c.basket.outcome));
+  const asIs = offered.filter((c) => ["accepted", "accepted_plus"].includes(c.basket.outcome));
+  $("basket-summary").textContent = offered.length
+    ? `Usual basket offered on ${offered.length} call${offered.length === 1 ? "" : "s"}: ordered on ${taken.length} `
+      + `(${Math.round(100 * taken.length / offered.length)}%), `
+      + `${asIs.length} taken as offered with a single yes`
+    : "No usual basket offered yet.";
   fill("calls-table", data.calls.map((c) => el("tr", {},
     el("td", { text: c.call_id }), el("td", { text: `${c.retailer_id} ${c.retailer_name}` }),
-    el("td", { text: c.outcome.replaceAll("_", " ") }), el("td", { class: "num", text: c.order_value_inr ? rupees(c.order_value_inr) : "" }),
+    el("td", { text: c.outcome.replaceAll("_", " ") }),
+    el("td", { text: c.basket ? BASKET[c.basket.outcome] : "" }),
+    el("td", { class: "num", text: c.order_value_inr ? rupees(c.order_value_inr) : "" }),
     el("td", { text: c.languages.join(", ") }), el("td", { class: "num", text: c.turns }),
-    el("td", { class: "num", text: c.guard_rejections }))), 7);
+    el("td", { class: "num", text: c.guard_rejections }))), 8);
 }
 
 async function loadNotes() {

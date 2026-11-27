@@ -101,6 +101,21 @@ def mentioned(word: str) -> Check:
     return check
 
 
+def basket_edited() -> Check:
+    def check(session, ctx):
+        outcome = session.basket_outcome()
+        ok = outcome == "edited" and session.order.state == CONFIRMED
+        return ok, f"usual basket {outcome}, order {session.order.state}"
+    return check
+
+
+def basket_taken() -> Check:
+    def check(session, ctx):
+        outcome = session.basket_outcome()
+        return outcome in ("accepted", "accepted_plus"), f"usual basket {outcome}"
+    return check
+
+
 def call_ended() -> Check:
     def check(session, ctx):
         return session.outcome not in ("", "hung_up"), f"outcome {session.outcome or 'none'}"
@@ -180,6 +195,14 @@ CASES = [
          "You are fully stocked. Mention that a rival coconut oil brand is running a buy 2 get 1 free offer in your "
          "area. Do not order.",
          [insight(), no_order()]),
+    Case("B01", "Usual basket, one yes", "R003",
+         "You are busy but happy to reorder. If the agent offers your usual order, say yes to it as it is. If they "
+         "suggest one extra product, politely decline. Confirm the order.",
+         [basket_taken(), call_ended()], tags=("basket",)),
+    Case("B02", "Usual basket, one change", "R005",
+         "Speak Gujarati. If the agent offers your usual order, accept it but ask to drop the last item they listed. "
+         "Decline any extra product. Confirm the corrected order.",
+         [basket_edited(), call_ended()], tags=("basket", "language")),
     Case("S06", "Refuses order, agrees to callback", "R003",
          "Say you don't want to order today. If they offer to call back later, agree to a call tomorrow morning.",
          [no_order(), task("callback")], tags=("surprise",)),

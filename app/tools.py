@@ -47,6 +47,13 @@ TOOLS = [
                        "confirm_identity(true).",
     },
     {
+        "name": "propose_basket",
+        "description": "Put the retailer's usual order (the brief's lead_with items at their suggested quantities, "
+                       "capped by today's stock) into the order in one step, ready to offer as a single question. "
+                       "Use it right after get_call_brief unless the retailer has already started listing items; "
+                       "items they already ordered are kept as they said them.",
+    },
+    {
         "name": "find_products",
         "description": "Search the catalogue by what the retailer said, e.g. 'Parachute 500 ml' or 'Saffola Gold'. "
                        "Returns matching SKUs with price, MRP and today's stock. If ambiguous is true, ask the "

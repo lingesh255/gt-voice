@@ -157,3 +157,10 @@ main { padding: 16px 20px 40px; }
 @media (max-width: 800px) {
   .grid, .split { grid-template-columns: 1fr; }
 }
+
+.tag { font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 4px; white-space: nowrap; }
+.src-usual { background: var(--accent-soft); color: var(--accent); }
+.src-asked { background: #eef0f2; color: var(--muted); }
+.src-addon { background: var(--warn-soft); color: var(--warn); }
+.src-swap { background: #eef0f2; color: var(--text); }
+#basket-summary { color: var(--accent); font-weight: 500; }

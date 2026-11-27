@@ -1,6 +1,6 @@
 # GT Voice Agent
 
-A working prototype of an AI telecaller for Marico's general trade channel. It calls a retailer, confirms who it is talking to, brings up what is due for reorder, takes the order by voice in the retailer's language, reads it back, and only books it after a clear yes. The confirmed order goes out as a structured record a distributor's order system can take. Callbacks, complaints, escalations, do-not-call requests and market feedback are captured as records too.
+A working prototype of an AI telecaller for Marico's general trade channel. It calls a retailer, confirms who it is talking to, offers their usual order as one ready basket with a total, takes changes by voice in the retailer's language, and only books it after a clear yes. The confirmed order goes out as a structured record a distributor's order system can take. Callbacks, complaints, escalations, do-not-call requests and market feedback are captured as records too.
 
 The language model only handles the conversation. Stock checks, unit conversion, quantity checks, the read-back rule, confirmation, identity and do-not-call are all done in Python. The model can change the order only by calling tools, and if a call is wrong the engine refuses it and says why, so the model asks the retailer again. Because of this the surprise scenarios don't rely on the prompt being followed.
 
@@ -79,11 +79,13 @@ Each retailer turn is transcribed (with the detected language), passed to the ag
 
 **When to call.** Every retailer gets a brief (`app/planner.py`). A shop is called only if it isn't on the do-not-call list (the data flag or an opt-out recorded on a call) and has at least one in-stock item that is due. The queue is ordered by the retailer's preferred calling window, then by value at stake: the suggested value of the lead items, weighted up when items are overdue. On the sample data that is 97 calls; R001, R025 and R082 are skipped.
 
-**What to recommend.** An item is *overdue* once days since the last order pass the retailer's purchase frequency, and *due soon* at 75% of it. The agent leads with overdue items first, then highest value, and stops adding lead items once they cover the retailer's typical order value (at most four). Out-of-stock items are never offered; if the retailer asks for one, the engine returns an in-stock alternative from the same family, brand or category.
+**The usual basket.** Instead of going item by item, the agent offers the whole usual order in one turn: "Set Wet Deodorant 14, Saffola Oats 1 kg 8, Set Wet Hair Gel 20, total ₹6,704. Shall I send it as it is, or change anything?" A shopkeeper with a customer at the counter can say one yes, which cuts the call from 8 to 10 turns to about 4 and uses the same pull of a pre-filled cart as online reorders. The basket is the lead items below, held in stock as soon as it is offered, and the offer counts as the read-back, so a yes books it. Any change means a fresh read-back. Every call records whether the basket was accepted as is, accepted with an add-on, edited or declined. Outcomes shows the acceptance rate, the conversion number a sales manager would track.
+
+**What goes in it.** An item is *overdue* once days since the last order pass the retailer's purchase frequency, and *due soon* at 75% of it. The agent leads with overdue items first, then highest value, and stops adding lead items once they cover the retailer's typical order value (at most four). Out-of-stock items are never offered; if the retailer asks for one, the engine returns an in-stock alternative from the same family, brand or category.
 
 **How much.** It anchors on what the retailer actually ordered. If the last order moved more than 20% from the one before, it follows the last order; otherwise it suggests the average of the two. The suggestion is capped at distributor stock. I kept it from pushing volume above recent orders, since overstocking a kirana leads to returns and credit problems; the cross-sell is where the basket grows.
 
-**When to cross-sell.** Once per call, after the retailer has ordered their own items, never during a complaint, and only with something in stock. The pick follows the `Cross_Sell_Opportunity` column: 200 ml to 500 ml trade-up (pitched on price per 100 ml and shop margin), Saffola Gold replenishment, Livon/Set Wet or Saffola Oats as a new line with a small trial quantity (about ₹500). For "no clear opportunity" it uses preferred brands the shop has never bought.
+**When to cross-sell.** Once per call, in one short line after they say yes to the basket (or finish their own items), never during a complaint, and only with something in stock. The pick follows the `Cross_Sell_Opportunity` column: 200 ml to 500 ml trade-up (pitched on price per 100 ml and shop margin), Saffola Gold replenishment, Livon/Set Wet or Saffola Oats as a new line with a small trial quantity (about ₹500). For "no clear opportunity" it uses preferred brands the shop has never bought.
 
 **When to escalate.** If the retailer asks for a person, wants a discount, scheme or credit, complains about a past order, or the same item fails validation three times. Escalations become tasks for the sales representative, with the call ID and a summary.
 
@@ -149,9 +151,10 @@ The test suite runs offline. It covers every row of `Call_Scenarios`, the six su
 Conversation evals run the real model against a second model playing the shopkeeper, then check the final records:
 
 ```bash
-python -m evals.run                # all 24 cases
+python -m evals.run                # all 26 cases
 python -m evals.run --only CS07,CS13
 python -m evals.run --tag surprise --repeat 3
+python -m evals.run --tag basket   # how often the usual basket is taken with one yes
 python -m evals.run --judge        # adds 1-5 scores for naturalness, language, respect, accuracy
 ```
 

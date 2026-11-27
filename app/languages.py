@@ -41,7 +41,7 @@ def reply_language(text: str, current: str, home: str) -> str:
     counts, latin = script_counts(text)
     if counts:
         script, native = max(counts.items(), key=lambda kv: kv[1])
-        if native >= max(3, 0.2 * (native + latin)):
+        if native >= 8 or native >= max(3, 0.2 * (native + latin)):
             if script == "deva":
                 return "mr-IN" if "mr-IN" in (current, home) else "hi-IN"
             if script == "beng":
