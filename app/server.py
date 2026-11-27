@@ -3,9 +3,8 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable
 
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -107,6 +106,7 @@ def create_app(settings: Settings | None = None, chat_factory: Callable[[], Chat
             "voice": "sarvam" if voice else "browser",
             "as_of": dataset.as_of.isoformat(),
             "webhook": bool(settings.oms_webhook_url),
+            "products": {sku: p.label for sku, p in dataset.products.items()},
         }
 
     @app.get("/api/retailers")
@@ -241,7 +241,7 @@ def create_app(settings: Settings | None = None, chat_factory: Callable[[], Chat
         try:
             payload = await request.json()
         except Exception:
-            raise HTTPException(400, "Body must be JSON.")
+            raise HTTPException(400, "Body must be JSON.") from None
         if not isinstance(payload, dict):
             raise HTTPException(400, "Body must be a JSON object.")
         status, body = oms.accept(payload, idempotency_key)

@@ -110,7 +110,7 @@ async def grade(case: Case, settings: Settings, dataset: Dataset, session: CallS
 def report(results: list[dict], folder: Path, settings: Settings) -> str:
     passed = sum(r["passed"] for r in results)
     lines = [
-        f"# Conversation evals",
+        "# Conversation evals",
         "",
         f"{datetime.now():%d %b %Y %H:%M} · model `{settings.model_label}` · {passed}/{len(results)} passed",
         "",

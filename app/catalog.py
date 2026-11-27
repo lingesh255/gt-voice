@@ -95,7 +95,7 @@ def search(dataset: Dataset, query: str) -> SearchResult:
 
     sizes: list[tuple[int, str]] = []
     bare: list[int] = []
-    for i, token in enumerate(tokens):
+    for i in range(len(tokens)):
         value = number_value(tokens, i)
         if value is None:
             continue

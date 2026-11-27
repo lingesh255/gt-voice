@@ -182,7 +182,7 @@ class Dataset:
         self.low_stock_threshold = max(low) if low else 15
 
     @classmethod
-    def load(cls, path: str | Path) -> "Dataset":
+    def load(cls, path: str | Path) -> Dataset:
         path = Path(path)
         if not path.exists():
             raise DataError(f"Data file not found: {path}")

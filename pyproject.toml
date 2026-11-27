@@ -1,0 +1,13 @@
+[project]
+name = "gt-voice-agent"
+version = "0.1.0"
+description = "AI telecalling agent for general trade order calls"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["F", "E9", "B", "UP", "SIM", "I"]
+ignore = ["B008"]

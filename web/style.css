@@ -89,12 +89,13 @@ main { padding: 16px 20px 40px; }
 .pill.warn { background: var(--warn-soft); color: var(--warn); }
 .pill.bad { background: var(--bad-soft); color: var(--bad); }
 
-.call-card { display: flex; flex-direction: column; }
+.call-card { display: flex; flex-direction: column; height: calc(100vh - 265px); min-height: 500px; }
 .call-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .call-name { font-weight: 600; }
 
 .transcript {
-  height: 420px;
+  flex: 1;
+  min-height: 160px;
   overflow-y: auto;
   margin: 12px 0;
   padding: 8px;
@@ -149,6 +150,11 @@ main { padding: 16px 20px 40px; }
 .notes li { margin-bottom: 12px; }
 .notes .title { font-weight: 600; }
 
+@media (max-width: 800px), (max-height: 700px) {
+  .call-card { height: auto; }
+  .transcript { flex: none; height: 360px; }
+}
+
 @media (max-width: 1200px) {
   .grid { grid-template-columns: 1fr 1fr; }
   .grid .phone { grid-row: span 2; }
@@ -164,3 +170,14 @@ main { padding: 16px 20px 40px; }
 .src-addon { background: var(--warn-soft); color: var(--warn); }
 .src-swap { background: #eef0f2; color: var(--text); }
 #basket-summary { color: var(--accent); font-weight: 500; }
+
+.call-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.timer { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 16px; }
+.transcript .empty { margin: auto; max-width: 240px; text-align: center; color: var(--muted); font-size: 13px; }
+.lines { margin-top: 10px; font-size: 13px; }
+.lines summary { cursor: pointer; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 96px; overflow-y: auto; }
+.chips button { font-size: 12px; padding: 4px 9px; border-radius: 999px; background: #fafbfc; }
+.chips button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.log .what { font-weight: 500; }
+.log .tool { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); margin-left: 6px; }

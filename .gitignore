@@ -7,3 +7,4 @@ __pycache__/
 runs/
 evals/out/
 .DS_Store
+.ruff_cache/

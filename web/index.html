@@ -40,9 +40,14 @@
                 <div class="call-name" id="call-name">No active call</div>
                 <div class="muted small" id="call-meta"></div>
               </div>
-              <div class="pill" id="call-state">idle</div>
+              <div class="call-side">
+                <div class="pill" id="call-state">idle</div>
+                <div class="timer" id="timer"></div>
+              </div>
             </div>
-            <div class="transcript" id="transcript"></div>
+            <div class="transcript" id="transcript">
+              <div class="empty">Pick a retailer and press Call. The agent speaks first, then listens.</div>
+            </div>
             <div class="controls">
               <div class="row between">
                 <div class="segmented" id="mode">
@@ -59,6 +64,10 @@
                 <input id="say" placeholder="Type what the retailer says" autocomplete="off" disabled>
                 <button id="send" disabled>Send</button>
               </form>
+              <details class="lines" id="lines">
+                <summary>Try a retailer line</summary>
+                <div class="chips" id="chips"></div>
+              </details>
               <div class="row">
                 <button id="retry" class="hidden">Retry</button>
                 <button id="hangup" class="danger" disabled>Hang up</button>

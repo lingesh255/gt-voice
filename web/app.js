@@ -104,7 +104,49 @@ function setCallState(state) {
     + (state === "error" ? " bad" : "");
 }
 
+const LINES = [
+  ["Yes, it's us", "Haan ji, boliye"],
+  ["Take the basket", "Haan, yahi bhej do"],
+  ["Drop an item", "Isme se last wala hata do"],
+  ["10 boxes", "Parachute 500 ml ke 10 box bhej do"],
+  ["Out of stock ask", "Saffola Gold 1 litre ke 10 chahiye"],
+  ["Few more", "Pichhli baar se thoda zyada bhej do"],
+  ["Switch to English", "Can we talk in English please?"],
+  ["Complaint", "Pichhli baar Parachute 4 piece kam aaya tha"],
+  ["Busy", "Abhi busy hoon, 5 baje ke baad call karna"],
+  ["Discount?", "Kuch extra discount milega?"],
+  ["Want a person", "Mujhe sales wale se baat karni hai"],
+  ["Don't call", "Dobara call mat karna"],
+  ["Wrong number", "Ye galat number hai, ye medical store hai"],
+  ["Confirm", "Haan confirm kar do"],
+];
+
+function renderChips() {
+  $("chips").replaceChildren(...LINES.map(([label, line]) => el("button", {
+    type: "button", title: line, text: label,
+    onclick: () => {
+      speaker.stop();
+      mic.agentSpeaking = false;
+      sendText(line);
+    },
+  })));
+}
+
+let ticking = null;
+
+function startTimer() {
+  const started = Date.now();
+  clearInterval(ticking);
+  const tick = () => {
+    const seconds = Math.floor((Date.now() - started) / 1000);
+    $("timer").textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  };
+  tick();
+  ticking = setInterval(tick, 1000);
+}
+
 function setControls(active) {
+  for (const chip of $("chips").querySelectorAll("button")) chip.disabled = !active;
   $("say").disabled = !active;
   $("send").disabled = !active;
   $("hangup").disabled = !active;
@@ -136,6 +178,7 @@ function afterSpeaking() {
 }
 
 function finishCall() {
+  clearInterval(ticking);
   app.ended = true;
   stopListening();
   setCallState("ended");
@@ -156,6 +199,7 @@ async function dial() {
     app.ended = false;
     app.busy = false;
     setControls(true);
+    startTimer();
     handleTurn(result);
   } catch (error) {
     setCallState("idle");
@@ -291,17 +335,45 @@ function renderOrder(state) {
   for (const task of state.tasks) outcome.append(el("span", { class: "pill warn", text: task }));
 }
 
+const LABELS = {
+  confirm_identity: "Checked who answered",
+  get_call_brief: "Loaded the call brief",
+  propose_basket: "Offered the usual basket",
+  find_products: "Searched the catalogue",
+  check_stock: "Checked stock",
+  add_to_order: "Added a line",
+  change_quantity: "Changed a quantity",
+  remove_from_order: "Removed a line",
+  read_back_order: "Read the order back",
+  confirm_order: "Booked the order",
+  schedule_callback: "Scheduled a callback",
+  log_complaint: "Logged a complaint",
+  escalate_to_human: "Handed over to a sales rep",
+  record_do_not_call: "Recorded do-not-call",
+  log_market_insight: "Noted market insight",
+  end_call: "Ended the call",
+};
+
+function product(sku) {
+  return (app.config && app.config.products && app.config.products[sku]) || sku;
+}
+
 function describe(event) {
   const a = event.args || {};
-  const parts = [event.name];
-  if (a.sku) parts.push(a.sku);
+  const r = event.result || {};
+  let label = LABELS[event.name] || event.name;
+  if (event.name === "confirm_identity") label = a.is_right_shop ? "Confirmed it is the right shop" : "Wrong person answered";
+  if (!event.ok) label = `Refused: ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+  const parts = [];
+  if (a.sku) parts.push(product(a.sku));
   if (a.quantity !== undefined) parts.push(`x ${a.quantity}${a.unit && a.unit !== "piece" ? " " + a.unit : ""}`);
   if (a.query) parts.push(`"${a.query}"`);
-  if (a.is_right_shop !== undefined) parts.push(a.is_right_shop ? "yes" : "no");
-  if (a.category) parts.push(a.category);
-  if (a.outcome) parts.push(a.outcome);
+  if (event.name === "propose_basket" && event.ok) parts.push(`${r.basket.length} lines, ${rupees(r.total_inr)}`);
+  if (event.name === "confirm_order" && event.ok) parts.push(`${r.order_id}, ${rupees(r.total_inr)}`);
+  if (a.category) parts.push(a.category.replaceAll("_", " "));
+  if (a.outcome) parts.push(a.outcome.replaceAll("_", " "));
   if (a.when) parts.push(a.when);
-  return parts.join(" ");
+  return { label, detail: parts.join(" ") };
 }
 
 function renderLog(events) {
@@ -312,10 +384,13 @@ function renderLog(events) {
     const said = event.args && event.args.retailer_said ? `heard: "${event.args.retailer_said}"` : "";
     let detail = ok ? said : event.error;
     if (ok && event.result && event.result.pack_tip) detail = `${said} · ${event.result.pack_tip}`;
+    const { label, detail: what } = describe(event);
     items.push(el("li", {},
       el("span", { class: "t", text: clock(event.t) }),
       el("div", {},
-        el("div", { class: ok ? "ok" : "guard", text: `${ok ? "✓" : "✗"} ${describe(event)}` }),
+        el("div", { class: ok ? "ok" : "guard" },
+          el("span", { class: "what", text: `${ok ? "✓" : "✗"} ${label}` }), what ? ` ${what}` : "",
+          el("span", { class: "tool", text: event.name })),
         detail ? el("div", { class: "args", text: detail }) : null)));
   }
   $("log").replaceChildren(...items);
@@ -560,6 +635,7 @@ async function boot() {
   else if (!app.serverVoice && !listener.supported) {
     banner("No SARVAM_API_KEY and this browser has no speech recognition. Typing still works; use Chrome or Edge for voice.", "info");
   }
+  renderChips();
   setControls(false);
   await loadRetailers();
 }

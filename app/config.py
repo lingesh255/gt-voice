@@ -30,7 +30,7 @@ class Settings:
     oms_webhook_url: str = ""
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         load_dotenv(ROOT / ".env")
         env = os.environ.get
         defaults = cls()

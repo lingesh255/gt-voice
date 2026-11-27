@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from .data import PACK_PATTERN, PACK_FACTORS, Dataset, Product, Retailer
+from .data import PACK_FACTORS, PACK_PATTERN, Dataset, Product, Retailer
 from .inventory import StockLedger
 
 SURNAMES = {"Sharma", "Patel", "Gupta", "Kumar", "Agarwal", "Jain", "Shah", "Mehta", "Verma", "Singh"}

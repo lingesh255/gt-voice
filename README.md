@@ -1,10 +1,12 @@
 # GT Voice Agent
 
+[![tests](https://github.com/lingesh255/gt-voice/actions/workflows/tests.yml/badge.svg)](https://github.com/lingesh255/gt-voice/actions/workflows/tests.yml)
+
 A working prototype of an AI telecaller for Marico's general trade channel. It calls a retailer, confirms who it is talking to, offers their usual order as one ready basket with a total, takes changes by voice in the retailer's language, and only books it after a clear yes. The confirmed order goes out as a structured record a distributor's order system can take. Callbacks, complaints, escalations, do-not-call requests and market feedback are captured as records too.
 
 The language model only handles the conversation. Stock checks, unit conversion, quantity checks, the read-back rule, confirmation, identity and do-not-call are all done in Python. The model can change the order only by calling tools, and if a call is wrong the engine refuses it and says why, so the model asks the retailer again. Because of this the surprise scenarios don't rely on the prompt being followed.
 
-![Console after a test call](docs/screenshot.png)
+![A test call: the usual basket is offered in one question, taken with one yes, one add-on is accepted and the order is booked](docs/demo.gif)
 
 Slides: [solution presentation](docs/solution-presentation.pdf) (architecture, stack, integrations, business logic) and [scalability approach](docs/scalability-approach.pdf) (pilot to 5 lakh retailers a day). The PowerPoint versions are in `docs/` as well.
 
@@ -47,7 +49,7 @@ Without a Sarvam key the app falls back to the browser's built-in speech (Chrome
 
 1. Pick a retailer and press **Call**. The middle and right panels show the live order, the engine log and the call brief.
 2. Talk. Hands-free mode detects when you start and stop speaking, and you can interrupt the agent while it talks. Push-to-talk (button or space bar) is better in a noisy room.
-3. You can also type what the retailer says. This is handy for testing exact phrases like "10 boxes" or "a few more than last time".
+3. You can also type what the retailer says, or open **Try a retailer line** and click one: "10 boxes", "switch to English", a complaint, a discount ask, "don't call again" and so on. Each one sends a ready Hindi/English line, which is the quickest way to run the surprise scenarios live.
 4. **Today's plan** shows who the agent would call today, in what order and why. **Outcomes** shows the order records, tasks, insights and call log. **Data notes** lists what the checks found in the workbook.
 
 Retailers that show the data well:
@@ -60,6 +62,14 @@ Retailers that show the data well:
 | R011 Ganesh Traders, Coimbatore (Tamil) | regular 200 ml order of 29, only 10 in stock |
 | R008 Patel General Store, Pune (Marathi) | Livon Serum 100 ml out of stock, 50 ml offered instead |
 | R001 Sharma Traders, Jaipur | the shop from the sample call. It is on the do-not-call list, so the call is refused |
+
+A two-minute run that shows most of it:
+
+1. Call **R001**. It is refused: the shop from the brief's sample call is on the do-not-call list.
+2. Call **R003**. Say yes when asked for the shop. The agent offers the usual basket with a total.
+3. Say "haan, yahi bhej do". It offers one add-on (Livon Serum 50 ml); accept or decline, then confirm.
+4. Open **Outcomes**: the order record, the basket result and the call log.
+5. Call **R043** and ask for Saffola Gold 1 litre: out of stock, so an alternative is offered. Then try "10 boxes" and "switch to English".
 
 ## How a call works
 
@@ -144,6 +154,7 @@ Set `OMS_WEBHOOK_URL` and every confirmed order is also POSTed there with an `Id
 ```bash
 pip install -r requirements-dev.txt
 pytest -q
+ruff check .
 ```
 
 The test suite runs offline. It covers every row of `Call_Scenarios`, the six surprise scenarios, unit and quantity parsing in Hindi, English and Tamil, stock holds across two calls, and the API. It also checks the Gemini, OpenAI and Sarvam request formats against mocked HTTP.
