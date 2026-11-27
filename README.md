@@ -30,7 +30,7 @@ cp .env.example .env    # then add your keys
 python main.py
 ```
 
-Open http://127.0.0.1:8000.
+Open http://127.0.0.1:8000. If PowerShell refuses to run `Activate.ps1`, run `Set-ExecutionPolicy -Scope Process Bypass` in that window first.
 
 Keys go in `.env`:
 
