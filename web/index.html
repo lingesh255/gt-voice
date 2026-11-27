@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GT Voice Agent</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">GT Voice Agent <span class="muted">general trade order calls</span></div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="call" class="active">Call</button>
+      <button data-tab="plan">Today's plan</button>
+      <button data-tab="outcomes">Outcomes</button>
+      <button data-tab="notes">Data notes</button>
+    </nav>
+    <div class="status" id="status"></div>
+  </header>
+
+  <div class="banner hidden" id="banner"></div>
+
+  <main>
+    <section class="tab" id="tab-call">
+      <div class="grid">
+        <div class="col phone">
+          <div class="card">
+            <label class="label" for="retailer">Retailer</label>
+            <div class="row">
+              <select id="retailer"></select>
+              <button id="dial" class="primary">Call</button>
+            </div>
+            <div class="hint" id="retailer-hint"></div>
+          </div>
+
+          <div class="card call-card">
+            <div class="call-head">
+              <div>
+                <div class="call-name" id="call-name">No active call</div>
+                <div class="muted small" id="call-meta"></div>
+              </div>
+              <div class="pill" id="call-state">idle</div>
+            </div>
+            <div class="transcript" id="transcript"></div>
+            <div class="controls">
+              <div class="row between">
+                <div class="segmented" id="mode">
+                  <button data-mode="handsfree" class="active">Hands-free</button>
+                  <button data-mode="push">Push to talk</button>
+                </div>
+                <label class="small check"><input type="checkbox" id="barge" checked> Allow interrupting</label>
+              </div>
+              <div class="row">
+                <button id="talk" class="talk hidden" disabled>Hold to talk</button>
+                <div class="meter"><div id="level"></div></div>
+              </div>
+              <form class="row" id="say-form">
+                <input id="say" placeholder="Type what the retailer says" autocomplete="off" disabled>
+                <button id="send" disabled>Send</button>
+              </form>
+              <div class="row">
+                <button id="retry" class="hidden">Retry</button>
+                <button id="hangup" class="danger" disabled>Hang up</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card">
+            <div class="card-head">
+              <h2>Order</h2>
+              <span class="pill" id="order-state">empty</span>
+            </div>
+            <table class="table" id="order-table">
+              <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Value</th><th class="num">Stock left</th></tr></thead>
+              <tbody></tbody>
+              <tfoot><tr><td colspan="3">Total</td><td class="num" id="order-total">0</td><td></td></tr></tfoot>
+            </table>
+            <div id="outcome" class="outcome"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <h2>Engine log</h2>
+              <span class="muted small">tool calls and guardrails, newest first</span>
+            </div>
+            <ol class="log" id="log"></ol>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card" id="brief">
+            <div class="card-head"><h2>Call brief</h2></div>
+            <p class="muted">Pick a retailer to see what the agent will lead with.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab hidden" id="tab-plan">
+      <div class="card">
+        <div class="card-head">
+          <h2>Call queue</h2>
+          <span class="muted small" id="plan-summary"></span>
+        </div>
+        <table class="table" id="plan-table">
+          <thead><tr><th>Window</th><th>Retailer</th><th>City</th><th>Language</th><th>Segment</th><th class="num">Priority</th><th class="num">Expected</th><th>Lead with</th><th>Cross-sell</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="split">
+        <div class="card">
+          <div class="card-head"><h2>Not calling today</h2></div>
+          <table class="table" id="skip-table">
+            <thead><tr><th>Retailer</th><th>City</th><th>Reason</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Open callbacks</h2></div>
+          <table class="table" id="callback-table">
+            <thead><tr><th>Id</th><th>Retailer</th><th>When</th><th>Reason</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab hidden" id="tab-outcomes">
+      <div class="row between">
+        <h2>Outcomes</h2>
+        <button id="refresh-outcomes">Refresh</button>
+      </div>
+      <div class="split">
+        <div class="card">
+          <div class="card-head"><h2>Orders sent to the distributor</h2></div>
+          <div id="orders"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Tasks for the sales team</h2></div>
+          <table class="table" id="task-table">
+            <thead><tr><th>Id</th><th>Kind</th><th>Retailer</th><th>Details</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="card-head spaced"><h2>Market insights</h2></div>
+          <table class="table" id="insight-table">
+            <thead><tr><th>Id</th><th>City</th><th>Insight</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="card-head spaced"><h2>Do-not-call requests</h2></div>
+          <table class="table" id="dnc-table">
+            <thead><tr><th>Retailer</th><th>Reason</th><th>When</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Call log</h2></div>
+        <table class="table" id="calls-table">
+          <thead><tr><th>Call</th><th>Retailer</th><th>Outcome</th><th class="num">Order value</th><th>Languages</th><th class="num">Turns</th><th class="num">Guard stops</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="tab hidden" id="tab-notes">
+      <div class="card">
+        <div class="card-head"><h2>What the data says</h2></div>
+        <p class="muted">Checks run on the workbook at start-up. These shaped how the agent behaves.</p>
+        <ol class="notes" id="notes"></ol>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
