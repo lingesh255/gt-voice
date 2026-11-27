@@ -4,6 +4,8 @@ A working prototype of an AI telecaller for Marico's general trade channel. It c
 
 The main design decision: **the language model handles the conversation, and plain code makes every decision that matters.** Stock checks, unit conversion, quantity sanity checks, the read-back rule, confirmation, identity and do-not-call are all enforced in Python. The model can only act through tools, and when it gets something wrong the engine refuses with a reason the model then follows. This is why the surprise scenarios hold up: they don't depend on the prompt being obeyed.
 
+Slides: [solution presentation](docs/solution-presentation.pdf) (architecture, stack, integrations, business logic) and [scalability approach](docs/scalability-approach.pdf) (pilot to 5 lakh retailers a day). The PowerPoint versions are in `docs/` as well.
+
 ## Running it
 
 You need Python 3.10 or newer and Chrome or Edge.
