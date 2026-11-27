@@ -36,10 +36,16 @@ const app = {
   mode: "handsfree",
   listenLanguage: "hi-IN",
   serverVoice: false,
+  micOff: false,
 };
 
 async function api(path, options = {}) {
-  const response = await fetch(path, options);
+  let response;
+  try {
+    response = await fetch(path, options);
+  } catch (error) {
+    throw new Error("Can't reach the server. Is python main.py still running?");
+  }
   let body = null;
   try {
     body = await response.json();
@@ -94,7 +100,9 @@ const mic = new Mic({
 
 const listener = new BrowserListener({
   onText: (text, confidence) => sendText(text, { unclear: confidence > 0 && confidence < 0.35 }),
-  onError: (error) => banner(`Browser speech recognition: ${error}`, "info"),
+  onError: (error) => banner(error === "not-allowed" || error === "service-not-allowed"
+    ? micProblem({ name: "NotAllowedError" })
+    : `The browser's speech recognition stopped (${error}). Typing still works.`, "info"),
 });
 
 function setCallState(state) {
@@ -158,7 +166,7 @@ function startListening() {
   if (app.ended || app.busy) return;
   setCallState("listening");
   if (app.serverVoice) {
-    mic.enabled = true;
+    mic.enabled = !app.micOff;
   } else if (app.mode === "handsfree") {
     listener.listen(app.listenLanguage);
   }
@@ -193,7 +201,14 @@ async function dial() {
   $("retry").classList.add("hidden");
   setCallState("dialing");
   try {
-    if (app.serverVoice) await mic.start();
+    if (app.serverVoice && !app.micOff) {
+      try {
+        await mic.start();
+      } catch (error) {
+        app.micOff = true;
+        banner(micProblem(error), "info");
+      }
+    }
     const result = await post("/api/calls", { retailer_id: retailerId, speak: true });
     app.callId = result.call_id;
     app.ended = false;
@@ -276,10 +291,25 @@ async function refreshCall() {
   }
 }
 
-function addBubble(speaker, text, language) {
+function micProblem(error) {
+  if (error && error.name === "NotAllowedError") {
+    return "Microphone access is blocked, so this call runs by typing. Allow the mic in the browser's site settings to talk.";
+  }
+  if (error && error.name === "NotFoundError") return "No microphone found, so this call runs by typing.";
+  return "The microphone couldn't start, so this call runs by typing.";
+}
+
+function seconds(timing) {
+  if (!timing) return "";
+  const total = (timing.stt_ms || 0) + (timing.model_ms || 0) + (timing.tts_ms || 0);
+  return total ? ` · ${(total / 1000).toFixed(1)} s` : "";
+}
+
+function addBubble(speaker, text, language, timing) {
   const who = speaker === "agent" ? "Agent" : speaker === "retailer" ? "Retailer" : "";
+  const title = timing ? `heard ${timing.stt_ms} ms · model ${timing.model_ms} ms · voice ${timing.tts_ms} ms` : null;
   const bubble = el("div", { class: `bubble ${speaker}` },
-    who ? el("span", { class: "who", text: `${who}${language ? " · " + language : ""}` }) : null, text);
+    who ? el("span", { class: "who", title, text: `${who}${language ? " · " + language : ""}${seconds(timing)}` }) : null, text);
   $("transcript").append(bubble);
   $("transcript").scrollTop = $("transcript").scrollHeight;
 }
@@ -291,7 +321,7 @@ function render(state) {
   $("call-meta").textContent = `call ${state.call_id} · speaking ${state.language} · ${identity}`;
   const transcript = $("transcript");
   transcript.replaceChildren();
-  for (const turn of state.transcript) addBubble(turn.speaker, turn.text, turn.language);
+  for (const turn of state.transcript) addBubble(turn.speaker, turn.text, turn.language, turn.timing);
   renderOrder(state);
   renderLog(state.events);
   renderBrief(state.brief);
@@ -535,7 +565,8 @@ async function loadOutcomes() {
     el("td", { text: c.basket ? BASKET[c.basket.outcome] : "" }),
     el("td", { class: "num", text: c.order_value_inr ? rupees(c.order_value_inr) : "" }),
     el("td", { text: c.languages.join(", ") }), el("td", { class: "num", text: c.turns }),
-    el("td", { class: "num", text: c.guard_rejections }))), 8);
+    el("td", { class: "num", text: c.avg_response_ms ? `${(c.avg_response_ms / 1000).toFixed(1)} s` : "" }),
+    el("td", { class: "num", text: c.guard_rejections }))), 9);
 }
 
 async function loadNotes() {

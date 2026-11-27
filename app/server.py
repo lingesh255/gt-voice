@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
+import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,6 +17,7 @@ from .agent import SalesAgent
 from .audit import findings
 from .config import ROOT, Settings
 from .data import Dataset
+from .errors import explain_model_error, explain_speech_error
 from .inventory import StockLedger
 from .languages import browser_language
 from .llm import ChatModel, LLMError
@@ -26,6 +29,14 @@ from .speech import SarvamSpeech, SpeechError
 
 WEB = ROOT / "web"
 MAX_SESSIONS = 50
+MAX_TEXT = 500
+MAX_AUDIO_BYTES = 5 * 1024 * 1024
+
+log = logging.getLogger("gt_voice")
+
+
+def ms_since(started: float) -> int:
+    return round((time.monotonic() - started) * 1000)
 
 
 class StartCall(BaseModel):
@@ -71,33 +82,66 @@ def create_app(settings: Settings | None = None, chat_factory: Callable[[], Chat
 
     async def speak(text: str, language: str, wants_audio: bool = True) -> dict:
         out = {"text": text, "language": language, "browser_language": browser_language(language),
-               "audio": None, "mime": None, "tts_fallback": False, "tts_error": None}
+               "audio": None, "mime": None, "tts_fallback": False, "tts_error": None, "tts_ms": 0}
         if voice and text and wants_audio:
+            started = time.monotonic()
             try:
                 result = await voice.synthesize(text, language)
                 out.update(audio=base64.b64encode(result.audio).decode(), mime=result.mime,
                            tts_fallback=result.fallback)
             except SpeechError as exc:
-                out["tts_error"] = str(exc)
+                out["tts_error"] = explain_speech_error(exc)
+                log.warning("tts failed: %s", exc)
+            out["tts_ms"] = ms_since(started)
         return out
 
+    def stamp(session: CallSession, timing: dict) -> None:
+        for entry in reversed(session.transcript):
+            if entry["speaker"] == "agent":
+                entry["timing"] = timing
+                break
+
+    def finished(session: CallSession) -> None:
+        log.info("call %s %s ended: %s, order %s", session.id, session.retailer.id, session.outcome,
+                 session.order_id or "-")
+
     async def turn(item: Live, text: str, language: str, unclear: bool, wants_audio: bool,
-                   heard: dict | None = None) -> dict:
+                   heard: dict | None = None, stt_ms: int = 0) -> dict:
+        session = item.session
         async with item.lock:
+            started = time.monotonic()
             try:
                 reply = await item.agent.respond(text, language, unclear)
             except LLMError as exc:
-                raise HTTPException(502, f"Model error: {exc}") from exc
+                log.warning("call %s model error: %s", session.id, exc)
+                raise HTTPException(502, explain_model_error(exc)) from exc
+            model_ms = ms_since(started)
             await gateway.deliver_pending()
-            return {
-                "heard": heard,
-                "reply": await speak(reply, item.session.language, wants_audio),
-                "state": item.session.snapshot(),
-            }
+            spoken = await speak(reply, session.language, wants_audio)
+            timing = {"stt_ms": stt_ms, "model_ms": model_ms, "tts_ms": spoken["tts_ms"]}
+            stamp(session, timing)
+            log.info("call %s %s turn %d: stt %d ms, model %d ms, tts %d ms, order %s Rs %d",
+                     session.id, session.retailer.id,
+                     sum(1 for t in session.transcript if t["speaker"] == "retailer"), stt_ms, model_ms,
+                     spoken["tts_ms"], session.order.state, session.order.total)
+            if session.ended:
+                finished(session)
+            return {"heard": heard, "reply": spoken, "timing": timing, "state": session.snapshot()}
 
     @app.get("/")
     async def index():
         return FileResponse(WEB / "index.html")
+
+    @app.get("/healthz")
+    async def healthz():
+        return {
+            "status": "ok",
+            "retailers": len(dataset.retailers),
+            "as_of": dataset.as_of.isoformat(),
+            "model_configured": llm_ready,
+            "speech": "sarvam" if voice else "browser",
+            "live_calls": sum(1 for c in calls.values() if not c.session.ended),
+        }
 
     @app.get("/api/config")
     async def config():
@@ -170,18 +214,27 @@ def create_app(settings: Settings | None = None, chat_factory: Callable[[], Chat
             _, old = calls.popitem(last=False)
             old.session.finish()
         async with item.lock:
+            started = time.monotonic()
             try:
                 text = await agent.open()
             except LLMError as exc:
-                raise HTTPException(502, f"Model error: {exc}") from exc
+                log.warning("call %s model error: %s", session.id, exc)
+                raise HTTPException(502, explain_model_error(exc)) from exc
+            model_ms = ms_since(started)
         reply = await speak(text, session.language, body.speak)
-        return {"call_id": session.id, "reply": reply, "state": session.snapshot()}
+        timing = {"stt_ms": 0, "model_ms": model_ms, "tts_ms": reply["tts_ms"]}
+        stamp(session, timing)
+        log.info("call %s started with %s %s (%s), opening in %d ms", session.id, session.retailer.id,
+                 session.retailer.name, session.retailer.language, model_ms + reply["tts_ms"])
+        return {"call_id": session.id, "reply": reply, "timing": timing, "state": session.snapshot()}
 
     @app.post("/api/calls/{call_id}/say")
     async def say(call_id: str, body: Say):
         item = live(call_id)
         if item.session.ended:
             raise HTTPException(409, "This call has ended.")
+        if len(body.text) > MAX_TEXT:
+            raise HTTPException(413, f"That's too long for one turn. Keep it under {MAX_TEXT} characters.")
         return await turn(item, body.text, body.language, body.unclear, body.speak)
 
     @app.post("/api/calls/{call_id}/audio")
@@ -194,13 +247,18 @@ def create_app(settings: Settings | None = None, chat_factory: Callable[[], Chat
         data = await file.read()
         if not data:
             raise HTTPException(400, "Empty audio.")
+        if len(data) > MAX_AUDIO_BYTES:
+            raise HTTPException(413, "That turn was too long. Keep each turn under about 20 seconds.")
+        started = time.monotonic()
         try:
             heard = await voice.transcribe(data, file.filename or "turn.wav", file.content_type or "audio/wav")
         except SpeechError as exc:
-            raise HTTPException(502, str(exc)) from exc
+            log.warning("call %s stt error: %s", call_id, exc)
+            raise HTTPException(502, explain_speech_error(exc)) from exc
+        stt_ms = ms_since(started)
         unclear = not heard.text or (heard.confidence is not None and heard.confidence < 0.3)
         return await turn(item, heard.text, heard.language, unclear, True,
-                          {"text": heard.text, "language": heard.language, "confidence": heard.confidence})
+                          {"text": heard.text, "language": heard.language, "confidence": heard.confidence}, stt_ms)
 
     @app.post("/api/calls/{call_id}/resume")
     async def resume(call_id: str):
@@ -209,7 +267,7 @@ def create_app(settings: Settings | None = None, chat_factory: Callable[[], Chat
             try:
                 text = await item.agent.resume()
             except LLMError as exc:
-                raise HTTPException(502, f"Model error: {exc}") from exc
+                raise HTTPException(502, explain_model_error(exc)) from exc
             await gateway.deliver_pending()
         return {"heard": None, "reply": await speak(text, item.session.language), "state": item.session.snapshot()}
 
@@ -217,7 +275,10 @@ def create_app(settings: Settings | None = None, chat_factory: Callable[[], Chat
     async def hangup(call_id: str):
         item = live(call_id)
         async with item.lock:
+            was_open = not item.session.ended
             item.session.finish()
+        if was_open:
+            finished(item.session)
         return {"state": item.session.snapshot()}
 
     @app.get("/api/calls/{call_id}")

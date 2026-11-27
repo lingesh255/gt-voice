@@ -2,154 +2,66 @@
 
 [![tests](https://github.com/lingesh255/gt-voice/actions/workflows/tests.yml/badge.svg)](https://github.com/lingesh255/gt-voice/actions/workflows/tests.yml)
 
-A working prototype of an AI telecaller for Marico's general trade channel. It calls a retailer, confirms who it is talking to, offers their usual order as one ready basket with a total, takes changes by voice in the retailer's language, and only books it after a clear yes. The confirmed order goes out as a structured record a distributor's order system can take. Callbacks, complaints, escalations, do-not-call requests and market feedback are captured as records too.
+An AI telecaller for Marico's general trade channel, built for the Marico x IIT Madras build challenge.
 
-The language model only handles the conversation. Stock checks, unit conversion, quantity checks, the read-back rule, confirmation, identity and do-not-call are all done in Python. The model can change the order only by calling tools, and if a call is wrong the engine refuses it and says why, so the model asks the retailer again. Because of this the surprise scenarios don't rely on the prompt being followed.
+It calls a retailer, checks it's talking to the right shop, offers their usual order as one basket with a total, takes changes by voice in the retailer's language, and books the order only after a clear yes. The order goes out as a record a distributor's system can take; callbacks, complaints, hand-overs and opt-outs are recorded too.
+
+The model only does the talking. Stock, units, prices, the read-back and the confirmation are all checked in Python, and the model can change an order only through tools the engine can refuse.
 
 ![A test call: the usual basket is offered in one question, taken with one yes, one add-on is accepted and the order is booked](docs/demo.gif)
 
-Slides: [solution presentation](docs/solution-presentation.pdf) (architecture, stack, integrations, business logic) and [scalability approach](docs/scalability-approach.pdf) (pilot to 5 lakh retailers a day). The PowerPoint versions are in `docs/` as well.
+- [Solution presentation](docs/solution-presentation.pdf) (5 slides) and [scalability approach](docs/scalability-approach.pdf) (3 slides), with PowerPoint versions in `docs/`
+- [Design notes](docs/design.md): business rules, guardrails, the order record, and what the data check found
 
-## Running it
+## Quick start
 
-You need Python 3.10 or newer and Chrome or Edge.
-
-Windows (PowerShell):
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-copy .env.example .env
-notepad .env
-python main.py
-```
-
-macOS / Linux:
+You need Python 3.10+ and Chrome or Edge.
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env    # then add your keys
+cp .env.example .env             # Windows: copy .env.example .env
+```
+
+Add your keys to `.env`, then check them and start the app:
+
+```bash
+python main.py --check
 python main.py
 ```
 
-Open http://127.0.0.1:8000. If PowerShell refuses to run `Activate.ps1`, run `Set-ExecutionPolicy -Scope Process Bypass` in that window first.
+Open http://127.0.0.1:8000.
 
-Keys go in `.env`:
-
-| Key | What for | Where to get it |
+| Key | Needed for | Where to get it |
 |---|---|---|
-| `GEMINI_API_KEY` | the agent's language model (required) | aistudio.google.com/apikey, free tier is enough for demos |
-| `SARVAM_API_KEY` | speech-to-text and text-to-speech in Indian languages (recommended) | dashboard.sarvam.ai, new accounts get free credit |
+| `GEMINI_API_KEY` | the agent (required) | aistudio.google.com/apikey; the free tier is fine for a demo |
+| `SARVAM_API_KEY` | Indian-language speech (recommended) | dashboard.sarvam.ai; new accounts get free credit |
 
-Without a Sarvam key the app falls back to the browser's built-in speech (Chrome/Edge). It works, but Sarvam handles code-mixed Hindi/English and regional accents far better. Any OpenAI-compatible endpoint can replace Gemini; see `.env.example`.
+Without a Sarvam key the app uses the browser's own speech recognition and voice. That works, but Sarvam is much better with Hindi-English mixing and regional accents. Any OpenAI-compatible model can stand in for Gemini; see `.env.example`.
 
-## Using the demo
-
-1. Pick a retailer and press **Call**. The middle and right panels show the live order, the engine log and the call brief.
-2. Talk. Hands-free mode detects when you start and stop speaking, and you can interrupt the agent while it talks. Push-to-talk (button or space bar) is better in a noisy room.
-3. You can also type what the retailer says, or open **Try a retailer line** and click one: "10 boxes", "switch to English", a complaint, a discount ask, "don't call again" and so on. Each one sends a ready Hindi/English line, which is the quickest way to run the surprise scenarios live.
-4. **Today's plan** shows who the agent would call today, in what order and why. **Outcomes** shows the order records, tasks, insights and call log. **Data notes** lists what the checks found in the workbook.
-
-Retailers that show the data well:
-
-| Retailer | Why |
-|---|---|
-| R003 Friends Provisions, Delhi (Hindi) | Saffola Gold 1 litre has only 13 in stock; Livon cross-sell |
-| R043 Sai Kirana Store, Delhi (Hindi) | both Saffola Gold packs are out of stock at its distributor |
-| R064 Mahalaxmi Agency, Indore (Hindi) | buys Parachute, Saffola Gold replenishment as cross-sell |
-| R011 Ganesh Traders, Coimbatore (Tamil) | regular 200 ml order of 29, only 10 in stock |
-| R008 Patel General Store, Pune (Marathi) | Livon Serum 100 ml out of stock, 50 ml offered instead |
-| R001 Sharma Traders, Jaipur | the shop from the sample call. It is on the do-not-call list, so the call is refused |
-
-A two-minute run that shows most of it:
-
-1. Call **R001**. It is refused: the shop from the brief's sample call is on the do-not-call list.
-2. Call **R003**. Say yes when asked for the shop. The agent offers the usual basket with a total.
-3. Say "haan, yahi bhej do". It offers one add-on (Livon Serum 50 ml); accept or decline, then confirm.
-4. Open **Outcomes**: the order record, the basket result and the call log.
-5. Call **R043** and ask for Saffola Gold 1 litre: out of stock, so an alternative is offered. Then try "10 boxes" and "switch to English".
-
-## How a call works
+`--check` makes one real request to each service and tells you what's wrong if something is:
 
 ```
- browser softphone ──audio──▶ Sarvam STT (saaras) ──text──▶ agent (Gemini, tool calling)
-        ▲                                                      │ tools only
-        └──audio── Sarvam TTS (bulbul) ◀──reply text──         ▼
-                                              order engine: identity, catalogue, units,
-                                              stock holds, order state, read-back, outcomes
-                                                   │                 │
-                                       distributor order record   tasks / insights / opt-outs
+Checking setup...
+  [ok  ] Data    100 retailers, 20 SKUs, 1000 purchase lines, as of 20 Nov 2026
+  [ok  ] Model   gemini-flash-latest answered in 640 ms
+  [FAIL] Speech  Sarvam rejected the API key. Check SARVAM_API_KEY in .env.
 ```
 
-Each retailer turn is transcribed (with the detected language), passed to the agent, and the agent's reply is spoken in whatever language it replied in. The agent has 15 tools (`app/tools.py`). It cannot change prices, cannot add an item without the retailer's own words, and cannot place an order that hasn't been read back since the last change.
+## Demo in two minutes
 
-## Business logic
+1. Call **R001**. It's refused: the shop from the brief's sample call is on the do-not-call list.
+2. Call **R003** and say yes when asked if it's Friends Provisions. The agent offers the usual basket with a total.
+3. Say "haan, yahi bhej do". It offers one add-on (Livon Serum 50 ml). Take it or not, then confirm.
+4. Open **Outcomes** to see the order record, how the basket did, and the call log.
+5. Call **R043** and ask for Saffola Gold 1 litre. It's out of stock at that distributor, so the agent offers an alternative. Try "10 boxes" and "switch to English" too.
 
-**When to call.** Every retailer gets a brief (`app/planner.py`). A shop is called only if it isn't on the do-not-call list (the data flag or an opt-out recorded on a call) and has at least one in-stock item that is due. The queue is ordered by the retailer's preferred calling window, then by value at stake: the suggested value of the lead items, weighted up when items are overdue. On the sample data that is 97 calls; R001, R025 and R082 are skipped.
+You can talk (hands-free, or hold the space bar), type, or click a ready line under **Try a retailer line**. That's the quickest way to run the surprise scenarios. Each agent reply shows how long it took; hover to see the time split between speech recognition, model and voice.
 
-**The usual basket.** Instead of going item by item, the agent offers the whole usual order in one turn: "Set Wet Deodorant 14, Saffola Oats 1 kg 8, Set Wet Hair Gel 20, total ₹6,704. Shall I send it as it is, or change anything?" A shopkeeper with a customer at the counter can say one yes, which cuts the call from 8 to 10 turns to about 4 and uses the same pull of a pre-filled cart as online reorders. The basket is the lead items below, held in stock as soon as it is offered, and the offer counts as the read-back, so a yes books it. Any change means a fresh read-back. Every call records whether the basket was accepted as is, accepted with an add-on, edited or declined. Outcomes shows the acceptance rate, the conversion number a sales manager would track.
+Other retailers worth calling: R011 (Tamil, its regular 200 ml order is larger than the stock), R008 (Marathi, the serum it buys is out of stock and the 50 ml is offered), R064 (Parachute buyer, Saffola Gold top-up as the add-on).
 
-**What goes in it.** An item is *overdue* once days since the last order pass the retailer's purchase frequency, and *due soon* at 75% of it. The agent leads with overdue items first, then highest value, and stops adding lead items once they cover the retailer's typical order value (at most four). Out-of-stock items are never offered; if the retailer asks for one, the engine returns an in-stock alternative from the same family, brand or category.
-
-**How much.** It anchors on what the retailer actually ordered. If the last order moved more than 20% from the one before, it follows the last order; otherwise it suggests the average of the two. The suggestion is capped at distributor stock. I kept it from pushing volume above recent orders, since overstocking a kirana leads to returns and credit problems; the cross-sell is where the basket grows.
-
-**When to cross-sell.** Once per call, in one short line after they say yes to the basket (or finish their own items), never during a complaint, and only with something in stock. The pick follows the `Cross_Sell_Opportunity` column: 200 ml to 500 ml trade-up (pitched on price per 100 ml and shop margin), Saffola Gold replenishment, Livon/Set Wet or Saffola Oats as a new line with a small trial quantity (about ₹500). For "no clear opportunity" it uses preferred brands the shop has never bought.
-
-**When to escalate.** If the retailer asks for a person, wants a discount, scheme or credit, complains about a past order, or the same item fails validation three times. Escalations become tasks for the sales representative, with the call ID and a summary.
-
-## Guardrails
-
-| Scenario | What happens | Enforced by |
-|---|---|---|
-| Wrong person answers | no history shared, call ends | brief and history locked until `confirm_identity(true)` |
-| Out-of-stock item | refused, alternative offered | engine stock check |
-| More than distributor stock | refused with the available count | engine, with per-call stock holds so two calls can't sell the same units |
-| "10 boxes" | refused, agent asks for pieces | no box size exists in the data, so boxes are never converted |
-| "A few more than last time" | refused, agent asks for a number | quantity reader flags vague and relative amounts |
-| Quantity doesn't match the retailer's words | refused, agent checks | engine compares the number against the retailer's own words |
-| Unusually large quantity | agent repeats it once | engine compares with history (over 3x the usual order) |
-| Unclear audio | agent asks to repeat | `[unclear]` turns can't add items |
-| Change after read-back | must read back again | order revision vs read-back revision |
-| "Ruko" / "nahi" at confirmation | not treated as yes | multilingual yes/no check |
-| Discount demand | standard price only, rep follow-up | no price field exists in any tool |
-| Do not call again | opt-out stored, future calls blocked | `runs/do_not_call.jsonl`, checked by planner and API |
-| "10 litre" of Saffola Gold | converted to packs, cheaper pack mix mentioned | unit conversion and pack check |
-
-## Outputs
-
-Confirmed orders are appended to `runs/orders.jsonl`:
-
-```json
-{
-  "order_id": "SO-261127-0001",
-  "idempotency_key": "1f5a3a30:1",
-  "retailer_id": "R003",
-  "distributor_id": "D001",
-  "lines": [{"sku": "P001", "product": "Parachute Coconut Oil 500 ml", "quantity": 15,
-             "unit": "piece", "unit_price_inr": 176, "line_value_inr": 2640, "source": "retailer_request"}],
-  "order_value_inr": 2640,
-  "pricing_basis": "distributor_billing_price",
-  "confirmation": {"status": "confirmed", "retailer_said": "haan confirm kar do", "read_back_revision": 1},
-  "language": "hi-IN"
-}
-```
-
-Set `OMS_WEBHOOK_URL` and every confirmed order is also POSTed there with an `Idempotency-Key` header. `/api/oms/orders` is a mock distributor endpoint that validates the record, rejects unconfirmed orders or totals that don't add up, and treats a repeated key as a duplicate. Tasks (callbacks, complaints, escalations), market insights, opt-outs and a call log with transcripts go to the other files in `runs/`.
-
-## What the data says
-
-`python -m app.audit` prints these; the app shows them under Data notes.
-
-- R001 Sharma Traders, the shop in the brief's sample call, is on the do-not-call list. Its history doesn't match the script either: it has never bought Parachute 500 ml, and its last 200 ml order was 3. It also buys Saffola Gold in 5 litre packs, so "10 litre" really means 2 x 5 litre (₹1,640) or 10 x 1 litre (₹1,680).
-- 20 shop names are shared by 42 retailers, so calls are keyed on retailer ID, never on name.
-- 188 of the 1,000 buying lines need more than the distributor holds, and 80 are for out-of-stock SKUs.
-- Every history row points to 20 Nov 2026 as "today"; the planner uses that date.
-- No pieces-per-box data exists.
-- The README sheet says 100 inventory rows and 20 scenarios; the workbook has 200 and 19.
-
-## Tests and evals
+## Tests
 
 ```bash
 pip install -r requirements-dev.txt
@@ -157,46 +69,68 @@ pytest -q
 ruff check .
 ```
 
-The test suite runs offline. It covers every row of `Call_Scenarios`, the six surprise scenarios, unit and quantity parsing in Hindi, English and Tamil, stock holds across two calls, and the API. It also checks the Gemini, OpenAI and Sarvam request formats against mocked HTTP.
+The tests run offline. They cover every row of `Call_Scenarios`, the six surprise scenarios, the usual basket, quantity and unit parsing in Hindi, English and Tamil, stock holds across two calls, and the API. The Gemini, OpenAI and Sarvam request formats are checked against mocked HTTP.
 
-Conversation evals run the real model against a second model playing the shopkeeper, then check the final records:
+Conversation evals run the real model against a second model playing the shopkeeper, then check what was recorded:
 
 ```bash
-python -m evals.run                # all 26 cases
-python -m evals.run --only CS07,CS13
-python -m evals.run --tag surprise --repeat 3
-python -m evals.run --tag basket   # how often the usual basket is taken with one yes
-python -m evals.run --judge        # adds 1-5 scores for naturalness, language, respect, accuracy
+python -m evals.run                 # all 26 cases
+python -m evals.run --tag surprise  # the six surprise scenarios
+python -m evals.run --tag basket    # how often the usual basket is taken with one yes
+python -m evals.run --judge         # also scores naturalness, language, respect, accuracy
 ```
 
-Results go to `evals/report.md`, with full transcripts and tool calls in `evals/out/`. On the Gemini free tier a full run takes a while because of rate limits; the runner backs off and retries.
+Results go to `evals/report.md`, with transcripts and tool calls in `evals/out/`. On the Gemini free tier a full run is slow because of rate limits; the runner waits and retries.
 
-## Layout
+## Deploying
+
+```bash
+docker build -t gt-voice .
+docker run -p 8000:8000 --env-file .env gt-voice
+```
+
+The container listens on `$PORT` (default 8000), runs as a non-root user and has a health check on `/healthz`. Browsers only allow the microphone on `localhost` or HTTPS, so put a hosted copy behind HTTPS.
+
+Each turn is logged on one line with timings:
+
+```
+17:42:10 call 68e1d032 R003 turn 4: stt 410 ms, model 1630 ms, tts 520 ms, order read_back Rs 6704
+```
+
+## Troubleshooting
+
+- **PowerShell won't run `Activate.ps1`.** Run `Set-ExecutionPolicy -Scope Process Bypass` in that window first.
+- **"The model provider rejected the API key."** The key in `.env` is wrong or has spaces around it. `python main.py --check` confirms the fix.
+- **"Rate limit or quota is used up."** The free tier allows a limited number of requests a minute. Wait a minute, or use a paid key for long eval runs.
+- **Microphone blocked.** The call carries on by typing. Allow the mic from the lock icon in the address bar and call again.
+- **No voice from the browser.** Some systems have no Hindi or Tamil voice installed. Add a Sarvam key, or install the language's voice in the OS settings.
+
+## Project layout
 
 ```
 app/
-  data.py        workbook loader and models
-  audit.py       data checks
-  planner.py     who to call, what and how much to suggest, cross-sell pick
-  catalog.py     product search from what the retailer said (English, Hindi, Tamil names)
+  planner.py     who to call, the usual basket, quantities, cross-sell pick
+  session.py     one call: the tools the agent can use, guardrails, records
+  catalog.py     product search from what the retailer said
   quantities.py  numbers, units, boxes, vague amounts, yes/no in several languages
   inventory.py   distributor stock with per-call holds
   order.py       order state: draft, read back, confirmed
-  session.py     one call: tools, guardrails, outcome records
   agent.py       model loop: tools in, spoken line out
-  prompts.py     system prompt
+  prompts.py     the agent's instructions
   llm.py         Gemini (native API) and OpenAI-compatible clients
   speech.py      Sarvam speech-to-text and text-to-speech
-  languages.py   reply language from script, TTS fallbacks
   server.py      FastAPI app
+  checks.py      setup check behind --check
+  data.py, audit.py, languages.py, oms.py, outcomes.py, errors.py, config.py, tools.py
 web/             softphone and ops console (plain JS, no build step)
-evals/           scenario cases and runner
-tests/           offline test suite
+evals/           conversation eval cases and runner
+tests/           offline tests
+docs/            slides, design notes, screenshots
 ```
 
 ## Known limits
 
-- The demo is turn-based over HTTP, so a reply takes a couple of seconds. Production would stream audio both ways over telephony (Exotel or Plivo into Pipecat or LiveKit) to get under a second.
-- Sarvam's TTS has no Assamese voice. Assamese replies are spoken with the Bengali voice, which shares the script; speech recognition does support Assamese.
-- Stock is the workbook snapshot. Holds and confirmed orders live in memory and reset when the server restarts; orders, tasks and opt-outs are kept in `runs/`.
+- Turns go over HTTP, so a reply takes a couple of seconds. In production, audio would stream both ways over telephony (Exotel or Plivo into Pipecat or LiveKit) to get under a second.
+- Sarvam has no Assamese voice yet. Assamese replies use the Bengali voice, which shares the script; recognition does support Assamese.
+- Stock comes from the workbook snapshot. Holds live in memory and reset on restart; orders, tasks and opt-outs are kept in `runs/`.
 - Prices are the distributor billing prices from the workbook. There is no scheme or discount logic.

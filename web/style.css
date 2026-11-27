@@ -117,7 +117,7 @@ main { padding: 16px 20px 40px; }
 .segmented button { border: none; border-radius: 0; padding: 5px 10px; font-size: 12px; }
 .segmented button.active { background: var(--accent); color: #fff; }
 
-.talk { flex: none; width: 140px; }
+.talk { flex: none; width: 170px; }
 .talk.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 .meter { flex: 1; height: 6px; background: #eef0f2; border-radius: 3px; overflow: hidden; }
 .meter div { height: 100%; width: 0; background: var(--accent); transition: width 60ms linear; }

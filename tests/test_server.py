@@ -108,3 +108,21 @@ def test_no_model_configured(tmp_path):
     with TestClient(create_app(settings, speech=None, store=OutcomeStore(None))) as client:
         assert client.get("/api/config").json()["llm"]["ready"] is False
         assert client.post("/api/calls", json={"retailer_id": "R003"}).status_code == 503
+
+
+def test_health_and_timings(client):
+    health = client.get("/healthz").json()
+    assert health["status"] == "ok" and health["retailers"] == 100 and health["speech"] == "sarvam"
+    start = client.post("/api/calls", json={"retailer_id": "R003"}).json()
+    assert set(start["timing"]) == {"stt_ms", "model_ms", "tts_ms"}
+    turn = client.post(f"/api/calls/{start['call_id']}/audio", files={"file": ("t.wav", b"RIFF", "audio/wav")}).json()
+    agent_turns = [t for t in turn["state"]["transcript"] if t["speaker"] == "agent"]
+    assert all("timing" in t for t in agent_turns)
+    assert client.get("/healthz").json()["live_calls"] == 1
+
+
+def test_turn_limits(client):
+    call_id = client.post("/api/calls", json={"retailer_id": "R003"}).json()["call_id"]
+    assert client.post(f"/api/calls/{call_id}/say", json={"text": "x" * 501}).status_code == 413
+    big = b"0" * (5 * 1024 * 1024 + 1)
+    assert client.post(f"/api/calls/{call_id}/audio", files={"file": ("t.wav", big, "audio/wav")}).status_code == 413

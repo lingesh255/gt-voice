@@ -569,6 +569,10 @@ class CallSession:
             self.recorded = True
             self.ctx.store.add("calls", self.call_record())
 
+    def average_response_ms(self) -> int | None:
+        times = [sum(t["timing"].values()) for t in self.transcript if t["speaker"] == "agent" and t.get("timing")]
+        return round(sum(times) / len(times)) if times else None
+
     def call_record(self) -> dict:
         tools = [e for e in self.events if e["kind"] == "tool"]
         return {
@@ -582,6 +586,7 @@ class CallSession:
             "order_value_inr": self.order.total if self.order_id else 0,
             "languages": sorted(self.languages_used),
             "turns": len(self.transcript),
+            "avg_response_ms": self.average_response_ms(),
             "tool_calls": len(tools),
             "guard_rejections": sum(1 for e in tools if not e["ok"]),
             "basket": {"outcome": self.basket_outcome(), "offered_value_inr": self.basket["value"] if self.basket else 0},

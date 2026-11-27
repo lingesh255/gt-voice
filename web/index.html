@@ -45,7 +45,7 @@
                 <div class="timer" id="timer"></div>
               </div>
             </div>
-            <div class="transcript" id="transcript">
+            <div class="transcript" id="transcript" aria-live="polite">
               <div class="empty">Pick a retailer and press Call. The agent speaks first, then listens.</div>
             </div>
             <div class="controls">
@@ -57,7 +57,7 @@
                 <label class="small check"><input type="checkbox" id="barge" checked> Allow interrupting</label>
               </div>
               <div class="row">
-                <button id="talk" class="talk hidden" disabled>Hold to talk</button>
+                <button id="talk" class="talk hidden" disabled title="Or hold the space bar">Hold to talk (Space)</button>
                 <div class="meter"><div id="level"></div></div>
               </div>
               <form class="row" id="say-form">
@@ -167,7 +167,7 @@
       <div class="card">
         <div class="card-head"><h2>Call log</h2><span class="small" id="basket-summary"></span></div>
         <table class="table" id="calls-table">
-          <thead><tr><th>Call</th><th>Retailer</th><th>Outcome</th><th>Basket</th><th class="num">Order value</th><th>Languages</th><th class="num">Turns</th><th class="num">Guard stops</th></tr></thead>
+          <thead><tr><th>Call</th><th>Retailer</th><th>Outcome</th><th>Basket</th><th class="num">Order value</th><th>Languages</th><th class="num">Turns</th><th class="num">Avg reply</th><th class="num">Guard stops</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
