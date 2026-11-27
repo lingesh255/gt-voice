@@ -1,0 +1,35 @@
+name: conversation evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Case ids, e.g. CS01,CS07 (empty runs all)"
+        required: false
+        default: ""
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run evals
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.only }}" ]; then
+            python -m evals.run --only "${{ github.event.inputs.only }}"
+          else
+            python -m evals.run
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: |
+            evals/report.md
+            evals/out/
